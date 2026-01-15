@@ -1,0 +1,65 @@
+db_connections:
+  app:
+    driver: sqlite+aiosqlite
+    path: demo.db
+
+app:
+  db_connection: app
+
+storage:
+  backend: localdir
+  directory: .files
+
+sse_hub: true
+security:
+  cors:
+    allow_origins: ["https://app.coplane.com"]
+    allow_credentials: true
+    allow_methods: ["*"]
+    allow_headers: ["*"]
+
+ai_models:
+  default: default_model
+  providers:
+    openai:
+      factory: openai_responses
+      options:
+        api_key_env: OPENAI_API_KEY
+    # azure_llm:
+    #   factory: azure_openai_responses
+    #   options:
+    #     endpoint_env: AZURE_OPENAI_ENDPOINT
+    #     deployment_env: AZURE_OPENAI_DEPLOYMENT
+    #     # Optional: omit to use DefaultAzureCredential
+    #     static_api_key: AZURE_OPENAI_KEY
+  models:
+    default_model:
+        provider: openai
+        model: gpt-4o-mini
+    # Example named model override used by ConfiguredModelKey("invoice_model")
+    # invoice_model:
+    #   provider: openai
+    #   model: gpt-4o
+    # azure_invoice_model:
+    #   provider: azure_llm
+    #   deployment_env: AZURE_OPENAI_DEPLOYMENT
+
+logging:
+  planar:
+    level: INFO # enable INFO level logging for all modules in the "planar" package.
+  # Uncomment the following two lines to see SQL statements
+  # sqlalchemy.engine:  
+  #   level: INFO
+  # The root logger is represented by an empty string, so you can uncomment
+  # the following lines to enable INFO level for the whole application (except sqlalchemy.engine, which must be enabled above)
+  # "":
+  #  level: INFO
+
+# Uncomment to enable data features with Ducklake
+# data:
+#   catalog:
+#     type: sqlite
+#     path: .data/catalog.sqlite
+#   storage:
+#     backend: localdir
+#     directory: .data/ducklake_files
