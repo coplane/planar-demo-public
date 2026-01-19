@@ -1,11 +1,20 @@
-### Multi-stage build for uv-based app
-
+### Base: Setup user and system prerequisites
 FROM python:3.12-slim-bookworm AS base
 
-#ipv4 precedence
+# Fix for slow IPv6 route lookups in some environments (e.g. older K8s/Docker networks, AWS ECS that is IPv4 only)
 RUN echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# Install runtime dependencies (ca-certificates) here so they exist in final image
+RUN \
+  apt-get update -qy && \
+  apt-get install -qyy \
+    -o APT::Install-Recommends=false \
+    -o APT::Install-Suggests=false \
+    ca-certificates && \
+  apt-get clean && \
+  rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN \
   groupadd -r app -g 1001 && \
@@ -13,45 +22,56 @@ RUN \
 
 WORKDIR /app
 
-
-### Builder: install build tooling, uv, and create the production venv
+### Builder: Install tooling and build the environment
 FROM base AS builder
 
+# Install build-only deps
 RUN \
   apt-get update -qy && \
   apt-get install -qyy \
     -o APT::Install-Recommends=false \
     -o APT::Install-Suggests=false \
-    build-essential \
-    ca-certificates && \
+    build-essential && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-COPY --chown=app:app . /app
+# Pin uv version for reproducibility
+COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /usr/local/bin/uv
 
-USER app
+# --- OPTIMIZATION START ---
+# 1. Copy only lockfiles first
+COPY --chown=app:app pyproject.toml uv.lock /app/
 
-# App user home is `/app`, so uv will use `/app/.cache` to store downloads.
-# To prevent uv from re-downloading packages every time we build, use
-# a build time volume mounted at /app/.cache
+# 2. Install dependencies ONLY (cached layer)
+#    We use a cache mount so uv doesn't re-download wheels if the layer is rebuilt.
 RUN --mount=type=cache,target=/app/.cache,uid=1001,gid=1001 \
     uv sync \
       --link-mode=copy \
       --compile-bytecode \
+      --no-install-project \
       --no-dev \
       --frozen
 
+# 3. Copy the rest of the application code
+COPY --chown=app:app . /app
 
+# 4. Install the project itself (fast layer)
+RUN --mount=type=cache,target=/app/.cache,uid=1001,gid=1001 \
+    uv sync \
+      --link-mode=copy \
+      --no-dev \
+      --frozen \
+      --compile-bytecode
+# --- OPTIMIZATION END ---
+
+### Runtime: Production image
 FROM base AS runtime
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    HOME=/app \
+ENV HOME=/app \
     USER=app \
-    LOGNAME=app \
     PATH=/app/.venv/bin:$PATH
 
-### copy built app/venv and expose runtime entrypoint
+# Copy the pre-built application and venv from builder
 COPY --from=builder --chown=app:app /app /app
 
 USER app
