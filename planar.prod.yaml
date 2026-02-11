@@ -4,7 +4,7 @@ db_connections:
     host: ${DB_HOST}
     port: ${DB_PORT}
     user: ${DB_USER}
-    password: ${DB_PASSWORD}
+    password: "${DB_PASSWORD}"
     db: ${DB_NAME}
 
 app:
